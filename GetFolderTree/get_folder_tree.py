@@ -2,8 +2,9 @@ import os
 import sys
 
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel, QHBoxLayout, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel, QHBoxLayout, QFileDialog, QMessageBox, QCheckBox
 from openpyxl import Workbook
+from openpyxl.styles import Alignment
 from openpyxl.utils.exceptions import InvalidFileException
 
 
@@ -27,6 +28,7 @@ class FolderTreeApp(QWidget):
         self.source_path_input.setAcceptDrops(True)
         self.source_path_input.dragEnterEvent = self.dragEnterEvent
         self.source_path_input.dropEvent = self.dropEvent
+        self.source_path_input.textChanged.connect(self.validate_source_path)
         source_path_layout.addWidget(self.source_path_input)
         self.source_path_browse_button = QPushButton('浏览', self)
         self.source_path_browse_button.clicked.connect(self.browse_source_path)
@@ -41,19 +43,33 @@ class FolderTreeApp(QWidget):
         self.format_label = QLabel('输出格式:')
         layout.addWidget(self.format_label)
         self.format_input = QLineEdit(self)
+        self.format_input.textChanged.connect(self.validate_format_string)
         layout.addWidget(self.format_input)
         self.format_input.setText('$name$')  # 设置默认值
+
+        # 输出层级
+        self.level_label = QLabel('输出层级:')
+        layout.addWidget(self.level_label)
+        self.level_input = QLineEdit(self)
+        self.level_input.textChanged.connect(self.validate_level)
+        layout.addWidget(self.level_input)
+        self.level_input.setText('100')  # 设置默认值
 
         # 保存目录
         self.save_path_label = QLabel('保存目录:')
         layout.addWidget(self.save_path_label)
         save_path_layout = QHBoxLayout()
         self.save_path_input = QLineEdit(self)
+        self.save_path_input.textChanged.connect(self.validate_save_path)
         save_path_layout.addWidget(self.save_path_input)
         self.save_path_browse_button = QPushButton('浏览', self)
         self.save_path_browse_button.clicked.connect(self.browse_save_path)
         save_path_layout.addWidget(self.save_path_browse_button)
         layout.addLayout(save_path_layout)
+
+        # 添加复选框
+        self.output_files_checkbox = QCheckBox('输出文件', self)
+        layout.addWidget(self.output_files_checkbox)
 
         self.save_markdown_button = QPushButton('保存Markdown', self)
         self.save_markdown_button.clicked.connect(self.save_markdown)
@@ -64,6 +80,29 @@ class FolderTreeApp(QWidget):
         layout.addWidget(self.save_xlsx_button)
 
         self.setLayout(layout)
+
+    def validate_source_path(self):
+        source_path = self.source_path_input.text()
+        if source_path and not os.path.isdir(source_path):
+            QMessageBox.critical(self, '错误', '处理目录无效')
+
+    def validate_save_path(self):
+        save_path = self.save_path_input.text()
+        if save_path and not os.path.isdir(save_path):
+            QMessageBox.critical(self, '错误', '保存目录无效')
+
+    def validate_format_string(self):
+        format_string = self.format_input.text()
+        if format_string and '$name$' not in format_string:
+            QMessageBox.critical(self, '错误', '格式字符串必须包含 $name$')
+
+    def validate_level(self):
+        level_string = self.level_input.text()
+        try:
+            if level_string:
+                int(level_string)
+        except ValueError:
+            QMessageBox.critical(self, '错误', '输出层级必须是整数')
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -90,7 +129,7 @@ class FolderTreeApp(QWidget):
         if os.path.isdir(source_path):
             print(f"Scanning directory: {source_path}")
             try:
-                self.folder_tree = get_folder_tree(source_path)
+                self.folder_tree = get_file_folder_tree(source_path)
                 QMessageBox.information(self, '成功', '扫描完成')
                 print("Scan completed")
             except Exception as e:
@@ -106,7 +145,8 @@ class FolderTreeApp(QWidget):
         if save_path and format_string:
             print(f"Saving Markdown to: {save_path} with format: {format_string}")
             try:
-                print_markdown_list(format_string, self.folder_tree, save_path + '/FolderTree.md')
+                print_markdown_list(self.output_files_checkbox.isChecked(), format_string, int(self.level_input.text()), self.folder_tree,
+                                    (save_path + '/FileFolderTree.md') if self.output_files_checkbox.isChecked() else (save_path + '/FolderTree.md'))
                 QMessageBox.information(self, '成功', '保存完成')
                 print("Save completed")
             except Exception as e:
@@ -122,7 +162,8 @@ class FolderTreeApp(QWidget):
         if save_path and format_string:
             print(f"Saving XLSX to: {save_path} with format: {format_string}")
             try:
-                print_xlsx(format_string, self.folder_tree, save_path + '/FolderTree.xlsx')
+                print_xlsx(self.output_files_checkbox.isChecked(), format_string, int(self.level_input.text()), self.folder_tree,
+                           (save_path + '/FileFolderTree.xlsx') if self.output_files_checkbox.isChecked() else (save_path + '/FolderTree.xlsx'))
                 QMessageBox.information(self, '成功', '保存完成')
                 print("Save completed")
             except Exception as e:
@@ -133,7 +174,7 @@ class FolderTreeApp(QWidget):
             print("Invalid save path or format string")
 
 
-def get_folder_tree(source_path):
+def get_file_folder_tree(source_path):
     # 获取指定目录的结构，包括文件夹和文件，以树的形式存储
     folder_tree = {}
     try:
@@ -154,27 +195,38 @@ def get_folder_tree(source_path):
                 current_level[dir_name] = {}
             # 将文件添加到当前级别的字典中，值为 None
             for file_name in files:
+                print(f"File: {file_name}")
                 current_level[file_name] = None
     except Exception as e:
         print(f"Error while reading directory structure: {e}")
     return folder_tree
 
 
-def print_markdown_list(format_string, folder_tree, result_path):
+def is_file(path):
+    # 分离文件名和扩展名
+    _, ext = os.path.splitext(path)
+    # 如果有扩展名，则认为是文件
+    return bool(ext)
+
+
+def print_markdown_list(print_files, format_string, level, folder_tree, result_path):
     # 遍历树，根据层级输出 markdown 列表
     # format_string："$name$" 代表文件名
-    def traverse_and_generate_markdown(tree, level=0):
+    def traverse_and_generate_markdown(tree, current_level=0):
+        if current_level > level - 1:
+            return []
         markdown_lines = []
         for name, subtree in tree.items():
-            # 根据层级生成缩进
-            indent = '  ' * level
-            # 格式化文件名
-            formatted_name = format_string.replace('$name$', name)
-            # 添加到 markdown 列表
-            markdown_lines.append(f'{indent}{formatted_name}')
+            if print_files is True or is_file(name) is False:
+                # 根据层级生成缩进
+                indent = '  ' * current_level
+                # 格式化文件名
+                formatted_name = format_string.replace('$name$', name)
+                # 添加到 markdown 列表
+                markdown_lines.append(f'{indent}{formatted_name}')
             # 如果是子目录，递归处理
             if isinstance(subtree, dict):
-                markdown_lines.extend(traverse_and_generate_markdown(subtree, level + 1))
+                markdown_lines.extend(traverse_and_generate_markdown(subtree, current_level + 1))
         return markdown_lines
 
     try:
@@ -189,17 +241,22 @@ def print_markdown_list(format_string, folder_tree, result_path):
         print(f"Unexpected error: {e}")
 
 
-def print_xlsx(format_string, folder_tree, result_path):
+def print_xlsx(print_files, format_string, level, folder_tree, result_path):
     # 遍历树，根据层级输出 XLSX 文件，合并单元格表示层级关系
     # format_string："$name$" 代表文件名
     def traverse_and_generate_xlsx(tree, ws, row=1, col=1):
         for name, subtree in tree.items():
-            # 格式化文件名
-            formatted_name = format_string.replace('$name$', name)
-            # 在工作表中写入文件名
-            cell = ws.cell(row=row, column=col, value=formatted_name)
+            if print_files is True or os.path.is_file(name) is False:
+                # 格式化文件名
+                formatted_name = format_string.replace('$name$', name)
+                # 在工作表中写入文件名
+                cell = ws.cell(row=row, column=col, value=formatted_name)
+                # 设置单元格水平居中、垂直居中
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            else:
+                row -= 1
             # 如果是子目录，递归处理
-            if len(subtree) > 0:
+            if subtree is not None and len(subtree) > 0:
                 next_row = traverse_and_generate_xlsx(subtree, ws, row, col + 1)
                 # 合并单元格表示层级关系
                 ws.merge_cells(start_row=row, start_column=col, end_row=next_row - 1, end_column=col)
@@ -215,6 +272,18 @@ def print_xlsx(format_string, folder_tree, result_path):
         ws = wb.active
         # 生成 XLSX 文件内容
         traverse_and_generate_xlsx(folder_tree, ws)
+        # 调整列宽以适应内容
+        for col in ws.columns:
+            max_length = 0
+            column = col[0].column_letter  # 获取列字母
+            for cell in col:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(cell.value)
+                except:
+                    pass
+            adjusted_width = (max_length + 2)
+            ws.column_dimensions[column].width = adjusted_width
         # 保存工作簿到文件
         wb.save(result_path)
     except InvalidFileException as e:
@@ -223,6 +292,9 @@ def print_xlsx(format_string, folder_tree, result_path):
         print(f"Permission error: {e}")
     except Exception as e:
         print(f"Error while generating or saving XLSX file: {e}")
+
+
+#         TODO：不输出文件时会报错Min value is 1，还没有实现输出指定层级的功能
 
 
 if __name__ == '__main__':
