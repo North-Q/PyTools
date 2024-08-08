@@ -65,6 +65,14 @@ class RubbishCleaner(QMainWindow):
         self.rubbish_count_label.setGeometry(20, 390, 560, 30)
         self.rubbish_count_label.hide()
 
+    def closeEvent(self, event):
+        try:
+            if os.path.exists('rubbish.txt'):
+                os.remove('rubbish.txt')
+        except Exception as e:
+            QMessageBox.critical(self, '错误', f'Error during cleanup: {str(e)}')
+        event.accept()
+
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.accept()
@@ -251,4 +259,4 @@ if __name__ == '__main__':
     ex.show()
     sys.exit(app.exec_())
 
-# pyinstaller --onefile --windowed --icon=icon.ico main.py
+# pyinstaller --onefile --windowed --icon=icon.ico delete_mac_rubbish.py
