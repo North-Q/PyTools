@@ -45,7 +45,7 @@ def parse_markdown(md_file):
 def write_to_excel(data, output_file):
     wb = Workbook()
     ws = wb.active
-    headers = ['模块', '是否仅依赖uORB', '是否与多旋翼无人机无关', '代码量', '备注']
+    headers = ['模块', '是否仅依赖uORB', '是否仅与多旋翼无人机有关', '代码量', '备注']
     ws.append(headers)
 
     # Apply bold font to headers
